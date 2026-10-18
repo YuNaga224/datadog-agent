@@ -40,7 +40,7 @@
 +endif()
 --- /dev/null
 +++ b/utils/oscap-io/oscap-io.c
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,234 @@
 +#include <stdio.h>
 +#include <stdlib.h>
 +#include <string.h>
@@ -113,7 +113,7 @@
 +{
 +	struct xccdf_rule_result_iterator *resIt;
 +	struct xccdf_rule_result *res;
-+	int n, resultCode;
++	int n, resultCode, printed;
 +	char *result, *err;
 +	const char *ruleRef;
 +
@@ -131,6 +131,7 @@
 +
 +	resIt = xccdf_session_get_rule_results(session);
 +
++	printed = 0;
 +	while (xccdf_rule_result_iterator_has_more(resIt)) {
 +		res = xccdf_rule_result_iterator_next(resIt);
 +		resultCode = (int)xccdf_rule_result_get_result(res);
@@ -140,6 +141,7 @@
 +			break;
 +		default:
 +			printf("%s %d\n", ruleRef, resultCode);
++			printed++;
 +		}
 +		if (verbose) {
 +			result = NULL;
@@ -167,6 +169,9 @@
 +
 +	xccdf_rule_result_iterator_free(resIt);
 +
++	if (printed == 0 && rule != NULL)
++		printf("%s %d\n", rule, XCCDF_RESULT_NOT_SELECTED);
++
 +	n = xccdf_session_contains_fail_result(session);
 +	if (n != 0) {
 +		dprintf("rule %s returned failures or errors\n", rule);
@@ -192,7 +197,7 @@
 +		global_session = session_new(xccdf);
 +		if (global_session == NULL) {
 +			fprintf(stderr, "error: session_new\n");
-+			return 1;
++			exit(1);
 +		}
 +	}
 +	session = global_session;
@@ -258,8 +263,10 @@
 +			continue;
 +		dprintf("evaluate profile [%s] rule [%s]\n", profile, rule);
 +		n = evaluate_rule(argv[0], profile, rule);
-+		if (n != 0)
++		if (n != 0) {
 +			fprintf(stderr, "error: evaluate_rule\n");
++			printf("%s %d\n", rule, XCCDF_RESULT_NOT_CHECKED);
++		}
 +		fflush(stdout);
 +	}
 +	free(line);
