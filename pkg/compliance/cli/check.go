@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	ddgostatsd "github.com/DataDog/datadog-go/v5/statsd"
 
@@ -141,11 +142,14 @@ func RunCheck(log log.Component, config config.Component, secretsComp secrets.Co
 			}
 			benchmarkEvents = append(benchmarkEvents, compliance.EvaluateRegoRule(context.Background(), inputs, benchmark, rule)...)
 		}
-		xccdfEvents, err := compliance.EvaluateXCCDFRules(context.Background(), hname, compliance.XCCDFProbeRoot(), benchmark, 0)
+		err := compliance.EvaluateXCCDFRules(context.Background(), hname, compliance.XCCDFProbeRoot(), benchmark, 0, func(event *compliance.CheckEvent, took time.Duration) {
+			compliance.ReportXCCDFInput(statsdClient, event.RuleID, took)
+			benchmarkEvents = append(benchmarkEvents, event)
+		})
 		if err != nil {
 			log.Warnf("could not evaluate xccdf benchmark: %v", err)
 		}
-		for _, event := range append(benchmarkEvents, xccdfEvents...) {
+		for _, event := range benchmarkEvents {
 			event.HostCCRID = hostCCRID
 			b, _ := json.MarshalIndent(event, "", "\t")
 			fmt.Println(string(b))

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/shirou/gopsutil/v4/process"
 
 	workloadfilter "github.com/DataDog/datadog-agent/comp/core/workloadfilter/def"
@@ -416,16 +417,16 @@ func (a *Agent) runXCCDFBenchmarks(ctx context.Context) {
 			if sleepRandomJitter(ctx, checkInterval, runCount, a.opts.Hostname, benchmark.FrameworkID) {
 				return
 			}
-			start := time.Now()
-			events, err := EvaluateXCCDFRules(ctx, a.opts.Hostname, XCCDFProbeRoot(), benchmark, defaultEvalThrottling)
+			err := EvaluateXCCDFRules(ctx, a.opts.Hostname, XCCDFProbeRoot(), benchmark, defaultEvalThrottling, func(event *CheckEvent, took time.Duration) {
+				ReportXCCDFInput(a.opts.StatsdClient, event.RuleID, took)
+				a.reportCheckEvents(checkInterval, event)
+			})
 			if ctx.Err() != nil {
 				return
 			}
 			if err != nil {
 				log.Warnf("could not evaluate xccdf benchmark: %v", err)
 			}
-			a.reportXCCDFInputs(len(benchmark.Rules), time.Since(start))
-			a.reportCheckEvents(checkInterval, events...)
 		}
 		if sleepAborted(ctx, runTicker.C) {
 			return
@@ -433,18 +434,18 @@ func (a *Agent) runXCCDFBenchmarks(ctx context.Context) {
 	}
 }
 
-// reportXCCDFInputs sends the input metrics of an XCCDF benchmark run that
-// evaluated n rules in d.
-func (a *Agent) reportXCCDFInputs(n int, d time.Duration) {
-	client := a.opts.StatsdClient
+// ReportXCCDFInput sends to client, when set, the input metrics of the XCCDF
+// rule ruleID that oscap-io evaluated in d.
+func ReportXCCDFInput(client statsd.ClientInterface, ruleID string, d time.Duration) {
 	if client == nil {
 		return
 	}
 	tags := []string{
+		"rule_id:" + ruleID,
 		"rule_input_type:xccdf",
 		"agent_version:" + version.AgentVersion,
 	}
-	if err := client.Count(metrics.MetricInputsHits, int64(n), tags, 1.0); err != nil {
+	if err := client.Count(metrics.MetricInputsHits, 1, tags, 1.0); err != nil {
 		log.Errorf("failed to send input metric: %v", err)
 	}
 	if err := client.Timing(metrics.MetricInputsDuration, d, tags, 1.0); err != nil {
